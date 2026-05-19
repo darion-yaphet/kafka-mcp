@@ -89,6 +89,11 @@ describe('KafkaService', () => {
       expect(metadata.partitions).toHaveLength(1);
       expect(mockFetchTopicMetadata).toHaveBeenCalledWith({ topics: ['topic-a'] });
     });
+
+    it('throws when topic is not found in metadata response', async () => {
+      mockFetchTopicMetadata.mockResolvedValueOnce({ topics: [] });
+      await expect(service.topicMetadata('missing-topic')).rejects.toThrow("Topic 'missing-topic' not found");
+    });
   });
 
   describe('produceMessage', () => {
@@ -147,7 +152,7 @@ describe('KafkaService', () => {
     });
 
     it('returns partial messages on timeout', async () => {
-      mockRun.mockImplementation(() => {}); // never fires eachMessage
+      mockRun.mockImplementation(() => Promise.resolve()); // never fires eachMessage
       const promise = service.consumeMessages('topic-a', 10, 'test-group', 5000);
       // Allow async setup (connect, subscribe) to complete before advancing timers
       await Promise.resolve();

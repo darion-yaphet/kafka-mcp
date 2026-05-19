@@ -60,7 +60,9 @@ export class KafkaService {
   async topicMetadata(topic: string): Promise<TopicMetadata> {
     const admin = await this.getAdmin();
     const result = await admin.fetchTopicMetadata({ topics: [topic] });
-    return result.topics[0] as TopicMetadata;
+    const metadata = result.topics[0];
+    if (!metadata) throw new Error(`Topic '${topic}' not found`);
+    return metadata as TopicMetadata;
   }
 
   async produceMessage(
@@ -101,6 +103,7 @@ export class KafkaService {
     try {
       await consumer.subscribe({ topic, fromBeginning: true });
 
+      let runError: Error | undefined;
       consumer.run({
         eachMessage: async ({ message, partition }) => {
           if (stop) return;
@@ -113,10 +116,15 @@ export class KafkaService {
           });
           if (messages.length >= limit) resolveCollected();
         },
+      }).catch((e) => {
+        runError = e instanceof Error ? e : new Error(String(e));
+        resolveCollected();
       });
 
       await Promise.race([collected, timeout]);
       stop = true;
+
+      if (runError) throw runError;
     } finally {
       await consumer.disconnect();
     }
