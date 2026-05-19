@@ -114,9 +114,18 @@ describe('KafkaService', () => {
       await service.produceMessage('topic-a', 'hello');
       expect(mockProducerDisconnect).toHaveBeenCalledTimes(1);
     });
+
+    it('disconnects producer even when send throws', async () => {
+      mockSend.mockRejectedValueOnce(new Error('broker down'));
+      await expect(service.produceMessage('topic-a', 'hello')).rejects.toThrow('broker down');
+      expect(mockProducerDisconnect).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('consumeMessages', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
     it('collects messages up to limit and disconnects', async () => {
       mockRun.mockImplementation(async ({ eachMessage }: { eachMessage: Function }) => {
         await eachMessage({
@@ -135,6 +144,19 @@ describe('KafkaService', () => {
       expect(messages[1]).toEqual({ key: null, value: 'v2', partition: 0, offset: '1', timestamp: '1001' });
       expect(mockConsumerDisconnect).toHaveBeenCalledTimes(1);
       expect(mockSubscribe).toHaveBeenCalledWith({ topic: 'topic-a', fromBeginning: true });
+    });
+
+    it('returns partial messages on timeout', async () => {
+      mockRun.mockImplementation(() => {}); // never fires eachMessage
+      const promise = service.consumeMessages('topic-a', 10, 'test-group', 5000);
+      // Allow async setup (connect, subscribe) to complete before advancing timers
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.advanceTimersByTime(5000);
+      const messages = await promise;
+      expect(messages).toHaveLength(0);
+      expect(mockConsumerDisconnect).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -19,20 +19,37 @@ export interface OffsetResult {
   partitions: Array<{ partition: number; offset: string; metadata: string | null }>;
 }
 
+export interface TopicPartitionMetadata {
+  partitionId: number;
+  leader: number;
+  replicas: number[];
+  isr: number[];
+}
+
+export interface TopicMetadata {
+  name: string;
+  partitions: TopicPartitionMetadata[];
+}
+
 export class KafkaService {
   private kafka: Kafka;
   private admin: Admin | null = null;
+  private adminReady: Promise<Admin> | null = null;
 
   constructor(brokers: string[]) {
     this.kafka = new Kafka({ clientId: 'kafka-mcp', brokers });
   }
 
-  private async getAdmin(): Promise<Admin> {
-    if (!this.admin) {
-      this.admin = this.kafka.admin();
-      await this.admin.connect();
+  private getAdmin(): Promise<Admin> {
+    if (!this.adminReady) {
+      this.adminReady = (async () => {
+        const admin = this.kafka.admin();
+        await admin.connect();
+        this.admin = admin;
+        return admin;
+      })();
     }
-    return this.admin;
+    return this.adminReady;
   }
 
   async listTopics(): Promise<string[]> {
@@ -40,10 +57,10 @@ export class KafkaService {
     return admin.listTopics();
   }
 
-  async topicMetadata(topic: string) {
+  async topicMetadata(topic: string): Promise<TopicMetadata> {
     const admin = await this.getAdmin();
     const result = await admin.fetchTopicMetadata({ topics: [topic] });
-    return result.topics[0];
+    return result.topics[0] as TopicMetadata;
   }
 
   async produceMessage(
@@ -70,31 +87,40 @@ export class KafkaService {
     topic: string,
     limit: number,
     groupId: string,
+    timeoutMs = 5000,
   ): Promise<MessageResult[]> {
     const consumer = this.kafka.consumer({ groupId });
     await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: true });
 
     const messages: MessageResult[] = [];
-    let done: () => void;
-    const collected = new Promise<void>((resolve) => { done = resolve; });
-    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
+    let stop = false;
+    let resolveCollected!: () => void;
+    const collected = new Promise<void>((r) => { resolveCollected = r; });
+    const timeout = new Promise<void>((r) => setTimeout(r, timeoutMs));
 
-    consumer.run({
-      eachMessage: async ({ message, partition }) => {
-        messages.push({
-          key: message.key ? message.key.toString() : null,
-          value: message.value ? message.value.toString() : null,
-          partition,
-          offset: message.offset,
-          timestamp: message.timestamp,
-        });
-        if (messages.length >= limit) done!();
-      },
-    });
+    try {
+      await consumer.subscribe({ topic, fromBeginning: true });
 
-    await Promise.race([collected, timeout]);
-    await consumer.disconnect();
+      consumer.run({
+        eachMessage: async ({ message, partition }) => {
+          if (stop) return;
+          messages.push({
+            key: message.key ? message.key.toString() : null,
+            value: message.value ? message.value.toString() : null,
+            partition,
+            offset: message.offset,
+            timestamp: message.timestamp,
+          });
+          if (messages.length >= limit) resolveCollected();
+        },
+      });
+
+      await Promise.race([collected, timeout]);
+      stop = true;
+    } finally {
+      await consumer.disconnect();
+    }
+
     return messages;
   }
 
@@ -107,13 +133,22 @@ export class KafkaService {
   async consumerGroupOffsets(groupId: string, topic?: string): Promise<OffsetResult[]> {
     const admin = await this.getAdmin();
     const topics = topic ? [topic] : await admin.listTopics();
-    return admin.fetchOffsets({ groupId, topics }) as Promise<OffsetResult[]>;
+    const raw = await admin.fetchOffsets({ groupId, topics });
+    return raw.map((entry) => ({
+      topic: entry.topic,
+      partitions: entry.partitions.map((p) => ({
+        partition: p.partition,
+        offset: p.offset,
+        metadata: p.metadata,
+      })),
+    }));
   }
 
   async disconnect(): Promise<void> {
     if (this.admin) {
       await this.admin.disconnect();
       this.admin = null;
+      this.adminReady = null;
     }
   }
 }
