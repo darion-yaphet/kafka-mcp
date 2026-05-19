@@ -12,9 +12,14 @@ describe('topic tools', () => {
   beforeEach(() => {
     kafka = new KafkaService([]) as jest.Mocked<KafkaService>;
     server = {
-      tool: jest.fn((name, _desc, _schema, handler) => { registeredTools[name] = handler; }),
+      registerTool: jest.fn((name, _config, handler) => { registeredTools[name] = handler; }),
     } as unknown as McpServer;
     registerTopicTools(server, kafka);
+  });
+
+  it('registers list_topics and topic_metadata tools', () => {
+    expect((server.registerTool as jest.Mock)).toHaveBeenCalledWith('list_topics', expect.any(Object), expect.any(Function));
+    expect((server.registerTool as jest.Mock)).toHaveBeenCalledWith('topic_metadata', expect.any(Object), expect.any(Function));
   });
 
   describe('list_topics', () => {
@@ -48,6 +53,7 @@ describe('topic tools', () => {
       kafka.topicMetadata.mockRejectedValue(new Error('topic not found'));
       const result = await registeredTools['topic_metadata']({ topic: 'missing' });
       expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('topic not found');
     });
   });
 });
