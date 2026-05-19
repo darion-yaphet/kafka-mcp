@@ -28,6 +28,7 @@ describe('message tools', () => {
       const result = await registeredTools['produce_message']({ topic: 'topic-a', message: 'hello' });
       expect(result.content[0].text).toContain('topic-a');
       expect(kafka.produceMessage).toHaveBeenCalledWith('topic-a', 'hello', undefined, undefined);
+      expect(result.isError).toBeUndefined();
     });
 
     it('passes optional key and partition', async () => {
@@ -69,6 +70,13 @@ describe('message tools', () => {
       ]);
       const result = await registeredTools['consume_messages']({ topic: 'topic-a' });
       expect(result.content[0].text).toContain('v1');
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('accepts limit of 1', async () => {
+      kafka.consumeMessages.mockResolvedValue([]);
+      await registeredTools['consume_messages']({ topic: 'topic-a', limit: 1 });
+      expect(kafka.consumeMessages).toHaveBeenCalledWith('topic-a', 1, 'tmp');
     });
 
     it('returns error response on failure', async () => {

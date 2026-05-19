@@ -40,7 +40,7 @@ export function registerMessageTools(server: McpServer, kafka: KafkaService): vo
       description: 'Read messages from a Kafka topic starting from the beginning',
       inputSchema: {
         topic: z.string().describe('Topic name to read from'),
-        limit: z.number().int().optional().describe(`Max messages to return (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT})`),
+        limit: z.number().int().min(1).optional().describe(`Max messages to return (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT})`),
         groupId: z.string().optional().describe('Consumer group ID (default: "tmp")'),
       },
     },
