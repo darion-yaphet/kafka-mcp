@@ -19,8 +19,15 @@ async function main() {
   registerMessageTools(server, kafka);
   registerConsumerTools(server, kafka);
 
+  let shuttingDown = false;
   const shutdown = async () => {
-    await kafka.disconnect();
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await kafka.disconnect();
+    } catch {
+      // best-effort
+    }
     process.exit(0);
   };
 
@@ -32,6 +39,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err.message);
+  console.error('Fatal:', err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
