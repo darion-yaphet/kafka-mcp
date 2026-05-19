@@ -38,6 +38,16 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig()).toThrow('Kafka broker address required');
   });
 
+  it('throws when --broker flag has no value', () => {
+    process.argv = ['node', 'index.js', '--broker'];
+    expect(() => resolveConfig()).toThrow('--broker flag requires a value');
+  });
+
+  it('throws when --broker value produces no valid addresses', () => {
+    process.argv = ['node', 'index.js', '--broker', ','];
+    expect(() => resolveConfig()).toThrow('no valid addresses');
+  });
+
   it('trims whitespace from broker addresses', () => {
     process.env.KAFKA_BROKERS = ' broker1:9092 , broker2:9092 ';
     const config = resolveConfig();

@@ -4,14 +4,25 @@ export interface Config {
 
 export function resolveConfig(): Config {
   const brokerArgIndex = process.argv.indexOf('--broker');
-  if (brokerArgIndex !== -1 && process.argv[brokerArgIndex + 1]) {
+  if (brokerArgIndex !== -1) {
     const raw = process.argv[brokerArgIndex + 1];
-    return { brokers: raw.split(',').map((b) => b.trim()).filter(Boolean) };
+    if (!raw || raw.startsWith('--')) {
+      throw new Error('--broker flag requires a value (e.g., --broker localhost:9092)');
+    }
+    const brokers = raw.split(',').map((b) => b.trim()).filter(Boolean);
+    if (brokers.length === 0) {
+      throw new Error('--broker value produced no valid addresses');
+    }
+    return { brokers };
   }
 
   const envBrokers = process.env.KAFKA_BROKERS;
   if (envBrokers) {
-    return { brokers: envBrokers.split(',').map((b) => b.trim()).filter(Boolean) };
+    const brokers = envBrokers.split(',').map((b) => b.trim()).filter(Boolean);
+    if (brokers.length === 0) {
+      throw new Error('KAFKA_BROKERS produced no valid addresses');
+    }
+    return { brokers };
   }
 
   throw new Error(
